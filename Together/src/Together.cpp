@@ -4,6 +4,7 @@
 #include <vector>
 #include <queue>
 #include <cmath>
+#include <python.h>
 
 //Sweep includes
 #include <sweep/sweep.hpp>
@@ -22,6 +23,20 @@ void gatherLIDAR(sweep::sweep& device);
 
 bool lidarScan = true;
 std::queue<sweep::scan> lidar;
+
+std::vector<int> decision;
+int speed = 0;
+int rotation = 0;
+
+Py_Initialize();
+PyObject *pName, *pModule, *pClass, *pInstance, *pResult;
+pName = PyString_FromString("map");
+pModule = PyImport_Import(pName);
+Py_DECREF(pName);
+
+// create an instance of navigation object from python code
+pClass = PyObject_GetAttrString(pModule, "Navigation");
+pInstance = PyInstance_New(pClass, NULL, NULL);
 
 
 int main(int argc, char **argv)
@@ -81,6 +96,16 @@ int main(int argc, char **argv)
     carCurr.x = 250;
     carCurr.y = 250;
     
+    int inputSize = 600;
+    float * inputs = new float[inputSize];
+    
+    float sum1, sum2, sum3, sum4, sum5, sum6 = 0;
+    float avg1, avg2, avg3, avg4, avg5, avg6 = 0; // avg distance of points within a sector
+    int count1, count2, count3, count4, count5, count6 = 0; // count of points within 2m
+    int total1, total2, total3, total4, total5, total6 = 0; // total count of points within a sector
+    int close = 0;
+    int lastAngle= 0;
+    
     char key = ' ';
     while(key != 'q')
     {
@@ -103,8 +128,52 @@ int main(int argc, char **argv)
           map = cv::Mat::zeros(500,500,CV_8UC1);
           for(const sweep::sample& sample : lidar.front().samples)
           {
-            cv::Point pt(carCurr.x+cos(sample.angle*M_PI/180000)*sample.distance,carCurr.y-sin(sample.angle*M_PI/180000)*sample.distance);
-            line(map, pt, pt, 255, 2, 8);
+            
+            if (sample.angle < lastAngle) {
+                // new loop begins
+                avg1 = sum1 / total1;
+                avg2 = sum2 / total2;
+                avg3 = sum3 / total3;
+                avg4 = sum4 / total4;
+                avg5 = sum5 / total5;
+                avg6 = sum6 / total6;
+                
+                // call python function
+                pResult = PyObject_CallMethod(pInstance, "update", "(ii)", close, count1, count2,
+                    count3, count4, count5, count6, avg1, avg2, avg3, avg4, avg5, avg6);
+                	
+                decision = listTupleToVector_Int(pResult);
+                rotation = decision[0];
+                speed = decision[1];
+                
+                count1, count2, count3, count4, count5, count6 = 0;
+                total1, total2, total3, total4, total5, total6 = 0;
+                sum1, sum2, sum3, sum4, sum5, sum6 = 0;
+                avg1, avg2, avg3, avg4, avg5, avg6 = 0; 
+                close = 0;
+            }
+            
+            if (sample.angle < 30000) {
+                updateParams(sample.distance, total1, count1, sum1);
+            } else if (sample.angle < 60000) {
+                updateParams(sample.distance, total2, count2, sum2);
+            } else if (sample.angle < 90000) {
+                updateParams(sample.distance, total3, count3, sum3);
+            } else if (sample.angle < 120000) {
+                updateParams(sample.distance, total4, count4, sum4);
+            } else if (sample.angle < 150000) {
+                updateParams(sample.distance, total5, count5, sum5);
+            } else if (sample.angle < 180000) {
+                updateParams(sample.distance, total6, count6, sum6);
+            }
+            if (sample.distance < 1000) {
+                close++;
+            }
+            lastAngle = sample.angle;
+        }
+   
+           // cv::Point pt(carCurr.x+cos(sample.angle*M_PI/180000)*sample.distance,carCurr.y-sin(sample.angle*M_PI/180000)*sample.distance);
+            //line(map, pt, pt, 255, 2, 8);
             //line(map, pt, pt, sample.signal_strength, 2, 8);
           }
           lidar.pop();
@@ -159,4 +228,37 @@ void gatherLIDAR(sweep::sweep& device)
      lidar.push(device.get_scan());
   }
   device.stop_scanning();
+}
+
+void updateParams(int distance, int total, int count, float sum)
+    if (distance > 800) {
+        sum += 800;
+    } else if (distance < 200) {
+        sum += distance;
+        count += 1;
+    } else {
+        sum += distance;
+    }
+        total += 1;
+    }
+}
+
+std::vector<int> listTupleToVector_Int(PyObject* incoming) {
+	std::vector<int> data;
+	if (PyTuple_Check(incoming)) {
+		for(Py_ssize_t i = 0; i < PyTuple_Size(incoming); i++) {
+			PyObject *value = PyTuple_GetItem(incoming, i);
+			data.push_back( PyFloat_AsDouble(value) );
+		}
+	} else {
+		if (PyList_Check(incoming)) {
+			for(Py_ssize_t i = 0; i < PyList_Size(incoming); i++) {
+				PyObject *value = PyList_GetItem(incoming, i);
+				data.push_back( PyFloat_AsDouble(value) );
+			}
+		} else {
+			throw logic_error("Passed PyObject pointer was not a list or tuple!");
+		}
+	}
+	return data;
 }
