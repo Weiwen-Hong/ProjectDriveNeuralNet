@@ -30,7 +30,6 @@ scores = [] # initializing the mean score curve (sliding window of the rewards) 
 
 class Car:
 
-    angle = 0 # initializing the angle of the car (angle between the x-axis of the map and the axis of the car)
     rotation = 0 # initializing the last rotation of the car (after playing the action, the car does a rotation of 0, 20 or -20 degrees)
     velocity = 0
     sensor1_x = 0 # initializing the x-coordinate of the first sensor (the one that looks forward)
@@ -48,11 +47,6 @@ class Car:
     avg5 = 0 # average distance of points within a sector
     avg6 = 0 # average distance of points within a sector
 
-    def rotate(self, rotation):
-        # calls rotate method in cpp
-
-    def changeSpeed(self, velocity):
-        # calls set motor speed method in cpp
             
 
 # Creating the game class
@@ -62,8 +56,8 @@ class Game:
    
 
     def serve_car(self): # starting the car when we launch the application
-        self.car.center = self.center # the car will start at the center of the map
         self.car.velocity = 6 # the car will start to go horizontally to the right with a speed of 6
+        self.car.rotation = 0
 
     def update(self, close, count1, count2, count3, count4, count5, count6, avg1, avg2, avg3, avg4, avg5, avg6): # the big update function that updates everything that needs to be updated at each discrete time t when reaching a new state (getting new signals from the sensors)
 
